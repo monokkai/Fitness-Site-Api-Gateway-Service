@@ -28,7 +28,7 @@ export class ProxyController {
             if (error.status) {
                 res.status(error.status).json(error.data || { message: error.message });
             } else {
-                res.status(500).json({ message: 'Внутренняя ошибка сервера' });
+                res.status(500).json({ message: 'Internal server error' });
             }
         }
     }
