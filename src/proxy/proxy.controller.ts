@@ -7,18 +7,24 @@ export class ProxyController {
     constructor(private readonly proxyService: ProxyService) { }
 
     @All('*')
-    async handleAll(@Req() req: Request, @Res() res: Response, @Body() body: any) {
+    async handleAll(
+        @Req() req: Request,
+        @Res() res: Response,
+        @Body() body: unknown
+    ): Promise<void> {
         if (req.method === 'OPTIONS') {
-            return res.status(200).end();
+            res.status(200).end();
+            return;
         }
 
         if (req.path.startsWith('/cookie')) {
-            return res.status(404).json({ message: 'Not handled by proxy' });
+            res.status(404).json({ message: 'Not handled by proxy' });
+            return;
         }
 
-        const serviceName = this.proxyService.getServiceByPath(req.path);
-
         try {
+            const serviceName = this.proxyService.getServiceByPath(req.path);
+
             const result = await this.proxyService.proxyRequest(
                 serviceName,
                 req.originalUrl,
@@ -28,9 +34,10 @@ export class ProxyController {
             );
 
             res.status(200).json(result);
-        } catch (error) {
-            if (error.status) {
-                res.status(error.status).json(error.data || { message: error.message });
+        } catch (error: unknown) {
+            if (error instanceof Error && 'status' in error) {
+                const err = error as { status: number; message: string; data?: unknown };
+                res.status(err.status).json(err.data || { message: err.message });
             } else {
                 res.status(500).json({ message: 'Internal server error' });
             }
