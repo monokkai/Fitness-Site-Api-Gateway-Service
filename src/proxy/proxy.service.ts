@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class ProxyService {
+    private readonly logger = new Logger(ProxyService.name);
     private services: any;
 
     constructor(
@@ -12,11 +13,13 @@ export class ProxyService {
         private configService: ConfigService,
     ) {
         this.services = {
-            auth: this.configService.get<string>('AUTH_SERVICE_URL') || 'http://localhost:3001',
-            training: this.configService.get<string>('TRAINING_SERVICE_URL') || 'http://localhost:3002',
-            cookie: this.configService.get<string>('COOKIE_SERVICE_URL') || 'http://localhost:3003',
-            guards: this.configService.get<string>('GUARDS_SERVICE_URL') || 'http://localhost:3004',
+            auth: this.configService.get<string>('AUTH_SERVICE_URL') || 'http://auth-service:80',
+            training: this.configService.get<string>('TRAINING_SERVICE_URL') || 'http://training-service:3000',
+            guards: this.configService.get<string>('GUARDS_SERVICE_URL') || 'http://guards-service:3003',
         };
+
+        this.logger.log('Proxy service initialized with URLs:');
+        this.logger.log(JSON.stringify(this.services, null, 2));
     }
 
     async proxyRequest(serviceName: string, originalUrl: string, method: string, body: any, headers: any) {
@@ -27,6 +30,7 @@ export class ProxyService {
         }
 
         const targetUrl = `${serviceUrl}${originalUrl}`;
+        this.logger.log(`Proxying to: ${targetUrl}`);
 
         try {
             const response = await firstValueFrom(
@@ -37,14 +41,15 @@ export class ProxyService {
                     headers: {
                         ...headers,
                         'x-request-id': headers['x-request-id'] || 'unknown',
-                        'origin': undefined,
-                        'referer': undefined,
+                        'host': new URL(serviceUrl).host,
                     },
+                    timeout: 10000,
                 })
             );
 
             return response.data;
         } catch (error) {
+            this.logger.error(`Proxy error for ${targetUrl}:`, error);
             if (error.response) {
                 throw {
                     status: error.response.status,
@@ -57,9 +62,13 @@ export class ProxyService {
     }
 
     getServiceByPath(path: string): string {
+        this.logger.log(`Routing path: ${path}`);
+
+        if (path.startsWith('/cookie')) {
+            throw new Error('Cookie routes should be handled locally');
+        }
         if (path.startsWith('/api/auth')) return 'auth';
         if (path.startsWith('/api/training') || path.startsWith('/user-profiles') || path.startsWith('/workouts')) return 'training';
-        if (path.startsWith('/cookie')) return 'cookie';
         if (path.startsWith('/auth/validate')) return 'guards';
         return 'auth';
     }

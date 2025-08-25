@@ -3,6 +3,9 @@ import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { ProxyModule } from './proxy/proxy.module';
 import { CorsMiddleware } from './middleware/cors.middleware';
+import { CookieModule } from './cookie/cookie.module';
+import { CookieController } from './cookie/cookie.controller';
+import { CookieService } from './cookie/cookie.service';
 
 @Module({
   imports: [
@@ -11,7 +14,10 @@ import { CorsMiddleware } from './middleware/cors.middleware';
     }),
     HttpModule,
     ProxyModule,
+    CookieModule
   ],
+  controllers: [CookieController],
+  providers: [CookieService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

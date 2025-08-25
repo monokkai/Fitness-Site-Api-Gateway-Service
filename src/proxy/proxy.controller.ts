@@ -12,6 +12,10 @@ export class ProxyController {
             return res.status(200).end();
         }
 
+        if (req.path.startsWith('/cookie')) {
+            return res.status(404).json({ message: 'Not handled by proxy' });
+        }
+
         const serviceName = this.proxyService.getServiceByPath(req.path);
 
         try {
