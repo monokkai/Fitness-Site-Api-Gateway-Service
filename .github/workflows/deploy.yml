@@ -1,0 +1,34 @@
+name: Build & Push Docker image to DockerHub guards-service
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: monokkay/api-gateway-service
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔄 Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🐳 Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 🏗️ Build and tag image
+        run: |
+          GIT_SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "GIT_SHORT_SHA=$GIT_SHORT_SHA" >> $GITHUB_ENV
+          docker build -t $IMAGE_NAME:$GIT_SHORT_SHA -t $IMAGE_NAME:latest .
+
+      - name: 📤 Push image to DockerHub
+        run: |
+          docker push $IMAGE_NAME:$GIT_SHORT_SHA
+          docker push $IMAGE_NAME:latest
