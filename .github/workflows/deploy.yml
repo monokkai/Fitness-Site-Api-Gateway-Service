@@ -1,4 +1,4 @@
-name: Build & Push Docker image to DockerHub guards-service
+name: Build & Push Docker image to DockerHub api-gateway-service
 
 on:
   push:
