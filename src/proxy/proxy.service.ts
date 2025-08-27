@@ -30,6 +30,7 @@ export class ProxyService {
             auth: this.configService.get<string>('AUTH_SERVICE_URL') || 'http://auth-service:80',
             training: this.configService.get<string>('TRAINING_SERVICE_URL') || 'http://training-service:3000',
             guards: this.configService.get<string>('GUARDS_SERVICE_URL') || 'http://guards-service:3003',
+            users: this.configService.get<string>('USERS_SERVICE_URL') || 'http://users-service:3004',
         };
 
         this.logger.log('Proxy service initialized with URLs:');
@@ -144,6 +145,8 @@ export class ProxyService {
         if (path.startsWith('/cookie')) {
             throw new HttpException('Cookie routes should be handled locally', 400);
         }
+
+        if (path.startsWith('/api/users')) return 'users';
         if (path.startsWith('/api/auth')) return 'auth';
         if (path.startsWith('/api/training') || path.startsWith('/user-profiles') || path.startsWith('/workouts')) return 'training';
         if (path.startsWith('/auth/validate')) return 'guards';

@@ -2,6 +2,7 @@ export interface ServiceUrls {
     auth: string;
     training: string;
     guards: string;
+    users: string;
 }
 
 export interface ProxyError {
