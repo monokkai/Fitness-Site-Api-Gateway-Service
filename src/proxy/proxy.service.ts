@@ -2,7 +2,8 @@ import { Injectable, Logger, HttpException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import { ServiceUrls, HttpRequestOptions } from '../types/proxy.types';
+import { ServiceUrls } from '../types/proxy.types';
+import { AxiosRequestConfig } from 'axios';
 
 interface AxiosErrorResponse {
     status?: number;
@@ -15,6 +16,8 @@ interface AxiosErrorResponse {
 interface AxiosError extends Error {
     response?: AxiosErrorResponse;
     isAxiosError?: boolean;
+    config?: AxiosRequestConfig;
+    code?: string;
 }
 
 @Injectable()
@@ -52,38 +55,53 @@ export class ProxyService {
 
         const targetUrl = `${serviceUrl}${originalUrl}`;
         this.logger.log(`Proxying to: ${targetUrl}`);
+        this.logger.debug(`Service: ${serviceName}, Method: ${method}`);
 
         try {
             const cleanHeaders: Record<string, string> = {};
             for (const [key, value] of Object.entries(headers)) {
-                if (value !== undefined) {
+                if (value !== undefined && !this.shouldSkipHeader(key)) {
                     cleanHeaders[key] = Array.isArray(value) ? value.join(', ') : value;
                 }
             }
 
-            const requestOptions: HttpRequestOptions = {
+            delete cleanHeaders['host'];
+            delete cleanHeaders['content-length'];
+
+            const requestConfig: AxiosRequestConfig = {
                 url: targetUrl,
-                method: this.validateHttpMethod(method),
+                method: method as AxiosRequestConfig['method'],
                 data: body,
-                headers: {
-                    ...cleanHeaders,
-                    'x-request-id': cleanHeaders['x-request-id'] || 'unknown',
-                    'host': new URL(serviceUrl).host,
-                },
+                headers: cleanHeaders,
                 timeout: 10000,
+                validateStatus: (status) => status < 500,
             };
 
+            this.logger.debug(`Request headers: ${JSON.stringify(cleanHeaders, null, 2)}`);
+
             const response = await firstValueFrom(
-                this.httpService.request(requestOptions)
+                this.httpService.request(requestConfig)
             );
 
+            this.logger.debug(`Response status: ${response.status}`);
             return response.data;
+
         } catch (error: unknown) {
             this.logger.error(`Proxy error for ${targetUrl}:`, error);
 
             if (this.isAxiosError(error)) {
                 const errorMessage = this.getErrorMessage(error);
                 const statusCode = error.response?.status || 500;
+
+                this.logger.error(`Axios error: ${statusCode} - ${errorMessage}`);
+
+                if (error.code === 'ECONNREFUSED') {
+                    throw new HttpException(
+                        `Cannot connect to ${serviceName} service`,
+                        503,
+                        { cause: error }
+                    );
+                }
 
                 throw new HttpException(
                     errorMessage,
@@ -92,20 +110,24 @@ export class ProxyService {
                 );
             }
 
+            this.logger.error('Unknown error type:', error);
             throw new HttpException('Internal server error', 500, { cause: error });
         }
     }
 
-    private validateHttpMethod(method: string): HttpRequestOptions['method'] {
-        const validMethods: HttpRequestOptions['method'][] = [
-            'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'
+    private shouldSkipHeader(key: string): boolean {
+        const skipHeaders = [
+            'host',
+            'content-length',
+            'connection',
+            'accept-encoding',
+            'accept-language',
+            'referer',
+            'sec-fetch-mode',
+            'sec-fetch-site',
+            'sec-fetch-dest'
         ];
-
-        if (validMethods.includes(method as HttpRequestOptions['method'])) {
-            return method as HttpRequestOptions['method'];
-        }
-
-        return 'GET';
+        return skipHeaders.includes(key.toLowerCase());
     }
 
     private isAxiosError(error: unknown): error is AxiosError {
@@ -118,6 +140,14 @@ export class ProxyService {
     }
 
     private getErrorMessage(error: AxiosError): string {
+        if (error.code === 'ECONNREFUSED') {
+            return `Service unavailable: Cannot connect to target service`;
+        }
+
+        if (error.code === 'ETIMEDOUT') {
+            return `Service timeout: Request took too long`;
+        }
+
         if (error.response?.data) {
             const responseData = error.response.data;
 
@@ -140,16 +170,57 @@ export class ProxyService {
     }
 
     getServiceByPath(path: string): keyof ServiceUrls {
-        this.logger.log(`Routing path: ${path}`);
+        this.logger.log(`🔍 Routing path: ${path}`);
 
         if (path.startsWith('/cookie')) {
             throw new HttpException('Cookie routes should be handled locally', 400);
         }
 
-        if (path.startsWith('/api/users')) return 'users';
-        if (path.startsWith('/api/auth')) return 'auth';
-        if (path.startsWith('/api/training') || path.startsWith('/user-profiles') || path.startsWith('/workouts')) return 'training';
-        if (path.startsWith('/auth/validate')) return 'guards';
+        if (path.startsWith('/user-profiles') ||
+            path.startsWith('/workouts') ||
+            path.startsWith('/user-workouts') ||
+            path.startsWith('/user-levels')) {
+            this.logger.log('✅ Routing to training service');
+            return 'training';
+        }
+
+        if (path.startsWith('/api/users')) {
+            this.logger.log('✅ Routing to users service');
+            return 'users';
+        }
+
+        if (path.startsWith('/api/auth')) {
+            this.logger.log('✅ Routing to auth service');
+            return 'auth';
+        }
+
+        if (path.startsWith('/auth/validate')) {
+            return 'guards';
+        }
+
+        this.logger.warn(`Unknown path: ${path}, defaulting to auth`);
         return 'auth';
+    }
+
+    async checkServiceHealth(serviceName: keyof ServiceUrls): Promise<boolean> {
+        const serviceUrl = this.services[serviceName];
+        if (!serviceUrl) return false;
+
+        try {
+            const response = await firstValueFrom(
+                this.httpService.get(`${serviceUrl}/health`, {
+                    timeout: 5000,
+                    validateStatus: (status) => status < 500
+                })
+            );
+            return response.status === 200;
+        } catch (error) {
+            this.logger.warn(`Service ${serviceName} health check failed:`, error);
+            return false;
+        }
+    }
+
+    getServiceUrl(serviceName: keyof ServiceUrls): string {
+        return this.services[serviceName] || 'Not configured';
     }
 }
