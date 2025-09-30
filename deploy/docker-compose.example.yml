@@ -1,0 +1,12 @@
+services:
+  api-gateway-service:
+    container_name: # container name
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      # port
+    env_file:
+      - .env
+    networks:
+      - auth-network
