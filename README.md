@@ -57,17 +57,6 @@ POST /cookie/client-data - Collect client analytics
 - Request validation and sanitization
 - Bot detection and filtering
 
-## 🚀 Quick Start
-
-### Environment Variables
-
-```env
-NODE_ENV=development
-AUTH_SERVICE_URL=http://auth-service:80
-TRAINING_SERVICE_URL=http://training-service:3000
-USERS_SERVICE_URL=http://users-service:3004
-```
-
 ### Run Service
 
 ```bash
